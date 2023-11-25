@@ -1,0 +1,6 @@
+.env
+build*
+dist*
+venv*
+Screenshot_App_Hanan.exe
+Screenshot_App_Hanan.spec
