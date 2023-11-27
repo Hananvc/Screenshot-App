@@ -4,9 +4,7 @@ from PIL import Image, ImageTk, ImageGrab, ImageOps
 from PIL.Image import LANCZOS
 import requests
 import os
-from dotenv import load_dotenv
-
-load_dotenv()
+import psutil
 
 class ScreenshotUploaderApp:
     def __init__(self, root):
@@ -14,7 +12,7 @@ class ScreenshotUploaderApp:
         self.root.title("Screenshot Uploader")
 
         # GUI Elements
-        self.screenshot_button = tk.Button(root, text="Take Screenshot", command=self.take_screenshot)
+        self.screenshot_button = tk.Button(root, text="Take Screenshot", command=self.take_and_upload_screenshot)
         self.screenshot_button.pack(pady=10)
 
         # Label for Remarks
@@ -33,45 +31,51 @@ class ScreenshotUploaderApp:
         self.phone_entry = Entry(root, width=40, state=tk.DISABLED)
         self.phone_entry.pack(pady=5)
 
-        # Button to upload to API
-        self.upload_button = tk.Button(root, text="Upload to API", command=self.upload_to_api, state=tk.DISABLED)
-        self.upload_button.pack(pady=10)
-
         # Image label for screenshot preview
         self.image_label = tk.Label(root)
         self.image_label.pack(pady=10)
 
-        # Screenshot path variable
-        self.screenshot_path = None
+        # Variable to track button state
+        self.screenshot_button_disabled = False
 
-    def take_screenshot(self):
-        # Hide the main window temporarily
-        self.root.iconify()
+    def take_and_upload_screenshot(self):
+        if not self.screenshot_button_disabled:
+            self.root.iconify()
+            self.root.after(600)
+            # Capture screenshot using ImageGrab
+            screenshot = ImageGrab.grab()
 
-        # Schedule the capture after a 1-second delay
-        self.root.after(600, self.capture_screenshot)
+            # Save screenshot to a temporary file
+            screenshot_path = "temp_screenshot.png"
+            screenshot.save(screenshot_path)
+            self.root.deiconify()
 
-    def capture_screenshot(self):
-        # Capture screenshot using ImageGrab
-        screenshot = ImageGrab.grab()
+            # Enable the entry fields
+            self.remarks_entry.config(state=tk.NORMAL)
+            self.phone_entry.config(state=tk.NORMAL)
 
-        # Save the screenshot to a temporary file (replace with actual logic)
-        screenshot_path = "temp_screenshot.png"
-        screenshot.save(screenshot_path)
+            # Display the screenshot preview
+            self.display_screenshot_preview(screenshot)
 
-        # Show the main window again
-        self.root.deiconify()
+            # Set the remarks entry to the active app name
+            self.remarks_entry.delete(0, tk.END)
+            self.remarks_entry.insert(0, self.get_active_app_name())
 
-        # Enable the entry fields and "Upload to API" button
-        self.remarks_entry.config(state=tk.NORMAL)
-        self.phone_entry.config(state=tk.NORMAL)
-        self.upload_button.config(state=tk.NORMAL)
+            static_phone_number = "8893443363"
+            self.phone_entry.delete(0, tk.END)  # Clear existing text
+            self.phone_entry.insert(0, static_phone_number)
 
-        # Store the screenshot path for later use in the API upload
-        self.screenshot_path = screenshot_path
+            # Upload the screenshot to the API and show the response
+            self.upload_screenshot_to_api(screenshot_path)
 
-        # Display the screenshot preview
-        self.display_screenshot_preview(screenshot)
+            # Disable the "Take Screenshot" button
+            self.screenshot_button.config(state=tk.DISABLED)
+            self.screenshot_button_disabled = True
+
+    def get_active_app_name(self):
+        foreground_pid = psutil.Process(os.getpid()).ppid()
+        active_app_name = psutil.Process(foreground_pid).name()
+        return active_app_name
 
     def display_screenshot_preview(self, image):
         # Display the entire screenshot in the GUI using LANCZOS resampling
@@ -82,12 +86,7 @@ class ScreenshotUploaderApp:
         self.image_label.config(image=img)
         self.image_label.image = img
 
-    def upload_to_api(self):
-        # Check if a screenshot has been taken
-        if not self.screenshot_path:
-            messagebox.showerror("Error", "Please take a screenshot first.")
-            return
-
+    def upload_screenshot_to_api(self, screenshot_path):
         # Get values from entry fields
         remarks = self.remarks_entry.get().strip()
         phone = self.phone_entry.get().strip()
@@ -102,42 +101,40 @@ class ScreenshotUploaderApp:
             messagebox.showerror("Error", "Phone number should not be empty.")
             return
 
-        api_url = os.getenv("API_URL")
+        api_url = "https://trogon.info/interview/python/index.php"
 
         # Prepare data for the API request
-        with open(self.screenshot_path, 'rb') as image_file:
+        with open(screenshot_path, 'rb') as image_file:
             files = {'image': ('screenshot.png', image_file, 'image/png')}
             data = {'remarks': remarks, 'phone': phone}
+
+            print("Sending files:", files)  # Add this line for debugging
+            print("Sending data:", data)  # Add this line for debugging
 
             # Make a POST request to the API
             try:
                 response = requests.post(api_url, files=files, data=data)
                 response_data = response.json()
 
+                print("API Response:", response_data)  # Add this line for debugging
+
                 # Display the API response in a new dialog
-                self.show_response_dialog(response_data)
+                self.show_response_in_app(response_data)
 
             except requests.RequestException as e:
                 # Handle API request errors
                 messagebox.showerror("Error", f"Failed to upload: {e}")
 
-    def show_response_dialog(self, response_data):
-        # Create a new Toplevel window for showing API response
-        response_window = tk.Toplevel(self.root)
-        response_window.title("API Response")
-
+    def show_response_in_app(self, response_data):
         # Create labels to display API response details
-        status_label = tk.Label(response_window, text=f"Status: {response_data.get('status')}")
+        status_label = tk.Label(self.root, text=f"Status: {response_data.get('status')}")
         status_label.pack()
 
-        message_label = tk.Label(response_window, text=f"Message: {response_data.get('message')}")
+        message_label = tk.Label(self.root, text=f"Message: {response_data.get('message')}")
         message_label.pack()
 
-        data_label = tk.Label(response_window, text=f"Data: {response_data.get('data')}")
+        data_label = tk.Label(self.root, text=f"Data: {response_data.get('data')}")
         data_label.pack()
-
-
-        # You can add more labels for additional details if needed
 
 if __name__ == "__main__":
     root = tk.Tk()
